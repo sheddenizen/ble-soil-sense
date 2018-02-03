@@ -17,3 +17,6 @@ iar/*
 *.bak
 *.ini
 
+.project
+.settings
+.cproject

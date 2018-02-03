@@ -6,7 +6,7 @@
  
 /**
  * This file is the main file for the application described in application note
- * nAN-36 Creating Bluetooth® Low Energy Applications Using nRF51822.
+ * nAN-36 Creating Bluetoothï¿½ Low Energy Applications Using nRF51822.
  */
 
 #include <stdint.h>
@@ -25,11 +25,11 @@
 #include "app_scheduler.h"
 #include "softdevice_handler.h"
 #include "app_timer_appsh.h"
-#include "ble_error_log.h"
+// #include "ble_error_log.h"
 #include "app_gpiote.h"
 #include "app_button.h"
-#include "ble_debug_assert_handler.h"
-#include "pstorage.h"
+//#include "ble_debug_assert_handler.h"
+//#include "pstorage.h"
 #include "ble_lbs.h"
 #include "bsp.h"
 #include "ble_gap.h"
@@ -39,6 +39,8 @@
 
 #define ADVERTISING_LED_PIN_NO          BSP_LED_0                                   /**< Is on when device is advertising. */
 #define CONNECTED_LED_PIN_NO            BSP_LED_1                                   /**< Is on when device has connected. */
+#define CENTRAL_LINK_COUNT              0                                           /**< Number of central links used by the application. When changing this number remember to adjust the RAM settings*/
+#define PERIPHERAL_LINK_COUNT           1                                           /**< Number of peripheral links used by the application. When changing this number remember to adjust the RAM settings*/
 
 #define LEDBUTTON_LED_PIN_NO            BSP_LED_0
 #define LEDBUTTON_BUTTON_PIN_NO         BSP_BUTTON_1
@@ -82,31 +84,7 @@ static ble_lbs_t                        m_lbs;
 #define SCHED_QUEUE_SIZE                10                                          /**< Maximum number of events in the scheduler queue. */
 
 // Persistent storage system event handler
-void pstorage_sys_event_handler (uint32_t p_evt);
-
-/**@brief Function for error handling, which is called when an error has occurred.
- *
- * @warning This handler is an example only and does not fit a final product. You need to analyze
- *          how your product is supposed to react in case of error.
- *
- * @param[in] error_code  Error code supplied to the handler.
- * @param[in] line_num    Line number where the handler is called.
- * @param[in] p_file_name Pointer to the file name.
- */
-void app_error_handler(uint32_t error_code, uint32_t line_num, const uint8_t * p_file_name)
-{
-    // This call can be used for debug purposes during application development.
-    // @note CAUTION: Activating this code will write the stack to flash on an error.
-    //                This function should NOT be used in a final product.
-    //                It is intended STRICTLY for development/debugging purposes.
-    //                The flash write will happen EVEN if the radio is active, thus interrupting
-    //                any communication.
-    //                Use with care. Un-comment the line below to use.
-    ble_debug_assert_handler(error_code, line_num, p_file_name);
-
-    // On assert, the system can only recover with a reset.
-    //NVIC_SystemReset();
-}
+// void pstorage_sys_event_handler (uint32_t p_evt);
 
 
 /**@brief Callback function for asserts in the SoftDevice.
@@ -145,7 +123,8 @@ static void leds_init(void)
 static void timers_init(void)
 {
     // Initialize timer module, making it use the scheduler
-    APP_TIMER_APPSH_INIT(APP_TIMER_PRESCALER, APP_TIMER_MAX_TIMERS, APP_TIMER_OP_QUEUE_SIZE, true);
+    APP_TIMER_APPSH_INIT(APP_TIMER_PRESCALER, APP_TIMER_OP_QUEUE_SIZE, true);
+//    APP_TIMER_APPSH_INIT(APP_TIMER_PRESCALER, APP_TIMER_MAX_TIMERS, APP_TIMER_OP_QUEUE_SIZE, true);
 }
 
 
@@ -339,7 +318,7 @@ static void advertising_start(void)
 static void on_ble_evt(ble_evt_t * p_ble_evt)
 {
     uint32_t                         err_code;
-    static ble_gap_evt_auth_status_t m_auth_status;
+//    static ble_gap_evt_auth_status_t m_auth_status;
 		static ble_gap_master_id_t p_master_id;
 		static ble_gap_sec_keyset_t keys_exchanged;
 
@@ -377,7 +356,7 @@ static void on_ble_evt(ble_evt_t * p_ble_evt)
             break;
 
         case BLE_GAP_EVT_AUTH_STATUS:
-            m_auth_status = p_ble_evt->evt.gap_evt.params.auth_status;
+//            m_auth_status = p_ble_evt->evt.gap_evt.params.auth_status;
             break;
 
         case BLE_GAP_EVT_SEC_INFO_REQUEST:
@@ -385,7 +364,7 @@ static void on_ble_evt(ble_evt_t * p_ble_evt)
 						
             if (p_master_id.ediv == p_ble_evt->evt.gap_evt.params.sec_info_request.master_id.ediv)
             {
-                err_code = sd_ble_gap_sec_info_reply(m_conn_handle, &keys_exchanged.keys_central.p_enc_key->enc_info, &keys_exchanged.keys_central.p_id_key->id_info, NULL);
+                err_code = sd_ble_gap_sec_info_reply(m_conn_handle, &keys_exchanged.keys_peer.p_enc_key->enc_info, &keys_exchanged.keys_peer.p_id_key->id_info, NULL);
                 APP_ERROR_CHECK(err_code);
 								p_master_id.ediv = p_ble_evt->evt.gap_evt.params.sec_info_request.master_id.ediv;
             }
@@ -435,18 +414,6 @@ static void ble_evt_dispatch(ble_evt_t * p_ble_evt)
 }
 
 
-/**@brief Function for dispatching a system event to interested modules.
- *
- * @details This function is called from the System event interrupt handler after a system
- *          event has been received.
- *
- * @param[in]   sys_evt   System stack event.
- */
-static void sys_evt_dispatch(uint32_t sys_evt)
-{
-    pstorage_sys_event_handler(sys_evt);
-}
-
 
 /**@brief Function for initializing the BLE stack.
  *
@@ -455,29 +422,32 @@ static void sys_evt_dispatch(uint32_t sys_evt)
 static void ble_stack_init(void)
 {
     uint32_t err_code;
-    
+
+    nrf_clock_lf_cfg_t clock_lf_cfg = NRF_CLOCK_LFCLKSRC;
+
     // Initialize the SoftDevice handler module.
-    SOFTDEVICE_HANDLER_INIT(NRF_CLOCK_LFCLKSRC_XTAL_20_PPM, false);
+    SOFTDEVICE_HANDLER_INIT(&clock_lf_cfg, NULL);
 
     // Enable BLE stack 
     ble_enable_params_t ble_enable_params;
-    memset(&ble_enable_params, 0, sizeof(ble_enable_params));
-    ble_enable_params.gatts_enable_params.service_changed = IS_SRVC_CHANGED_CHARACT_PRESENT;
-    err_code = sd_ble_enable(&ble_enable_params);
+    err_code = softdevice_enable_get_default_config(CENTRAL_LINK_COUNT,
+                                                    PERIPHERAL_LINK_COUNT,
+                                                    &ble_enable_params);
     APP_ERROR_CHECK(err_code);
 
-    ble_gap_addr_t addr;
+    //Check the ram settings against the used number of links
+    CHECK_RAM_START_ADDR(CENTRAL_LINK_COUNT, PERIPHERAL_LINK_COUNT);
     
-    err_code = sd_ble_gap_address_get(&addr);
+    // Enable BLE stack. 
+#if (NRF_SD_BLE_API_VERSION == 3)
+    ble_enable_params.gatt_enable_params.att_mtu = NRF_BLE_MAX_MTU_SIZE;
+#endif
+    // softdevice_enable invokes sd_ble_enable()
+    err_code = softdevice_enable(&ble_enable_params);
     APP_ERROR_CHECK(err_code);
-    sd_ble_gap_address_set(BLE_GAP_ADDR_CYCLE_MODE_NONE, &addr);
-    APP_ERROR_CHECK(err_code);
+
     // Subscribe for BLE events.
     err_code = softdevice_ble_evt_handler_set(ble_evt_dispatch);
-    APP_ERROR_CHECK(err_code);
-    
-    // Register with the SoftDevice handler module for BLE events.
-    err_code = softdevice_sys_evt_handler_set(sys_evt_dispatch);
     APP_ERROR_CHECK(err_code);
 }
 
