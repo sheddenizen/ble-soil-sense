@@ -9,6 +9,7 @@
  * nAN-36 Creating Bluetooth� Low Energy Applications Using nRF51822.
  */
 
+
 #include <stdint.h>
 #include <string.h>
 #include "nordic_common.h"
@@ -31,8 +32,14 @@
 //#include "ble_debug_assert_handler.h"
 //#include "pstorage.h"
 #include "ble_lbs.h"
+#include "ble_sms.h"
 #include "bsp.h"
 #include "ble_gap.h"
+
+
+#define NRF_LOG_MODULE_NAME "APP"
+#include "debug.h"
+
 #define IS_SRVC_CHANGED_CHARACT_PRESENT 0                                           /**< Include or not the service_changed characteristic. if not enabled, the server's database cannot be changed for the lifetime of the device*/
 
 #define WAKEUP_BUTTON_PIN               BSP_BUTTON_0                                /**< Button used to wake up the application. */
@@ -42,16 +49,15 @@
 #define CENTRAL_LINK_COUNT              0                                           /**< Number of central links used by the application. When changing this number remember to adjust the RAM settings*/
 #define PERIPHERAL_LINK_COUNT           1                                           /**< Number of peripheral links used by the application. When changing this number remember to adjust the RAM settings*/
 
-#define LEDBUTTON_LED_PIN_NO            BSP_LED_0
+#define LEDBUTTON_LED_PIN_NO            BSP_LED_2
 #define LEDBUTTON_BUTTON_PIN_NO         BSP_BUTTON_1
 
-#define DEVICE_NAME                     "LedButtonDemo"                             /**< Name of device. Will be included in the advertising data. */
+#define DEVICE_NAME                     "SoilMoistureSensor"                        /**< Name of device. Will be included in the advertising data. */
 
 #define APP_ADV_INTERVAL                64                                          /**< The advertising interval (in units of 0.625 ms. This value corresponds to 40 ms). */
 #define APP_ADV_TIMEOUT_IN_SECONDS      180                                         /**< The advertising timeout (in units of seconds). */
 
 #define APP_TIMER_PRESCALER             0                                           /**< Value of the RTC1 PRESCALER register. */
-#define APP_TIMER_MAX_TIMERS            2                                           /**< Maximum number of simultaneously created timers. */
 #define APP_TIMER_OP_QUEUE_SIZE         4                                           /**< Size of timer operation queues. */
 
 #define MIN_CONN_INTERVAL               MSEC_TO_UNITS(100, UNIT_1_25_MS)            /**< Minimum acceptable connection interval (0.5 seconds). */
@@ -78,14 +84,22 @@
 
 static ble_gap_sec_params_t             m_sec_params;                               /**< Security requirements for this application. */
 static uint16_t                         m_conn_handle = BLE_CONN_HANDLE_INVALID;    /**< Handle of the current connection. */
-static ble_lbs_t                        m_lbs;
+//static ble_lbs_t                        m_lbs;
+static ble_sms_t                        m_sms;
+
+static uint16_t dummy_moisture = 4242;
 
 #define SCHED_MAX_EVENT_DATA_SIZE       sizeof(app_timer_event_t)                   /**< Maximum size of scheduler events. Note that scheduler BLE stack events do not contain any data, as the events are being pulled from the stack in the event handler. */
 #define SCHED_QUEUE_SIZE                10                                          /**< Maximum number of events in the scheduler queue. */
 
+//#define APP_CHECK_RESULT(x) APP_ERROR_CHECK(x)
+
+
+
 // Persistent storage system event handler
 // void pstorage_sys_event_handler (uint32_t p_evt);
 
+uint8_t led_debug_last_state = 0;
 
 /**@brief Callback function for asserts in the SoftDevice.
  *
@@ -113,6 +127,8 @@ static void leds_init(void)
     nrf_gpio_cfg_output(ADVERTISING_LED_PIN_NO);
     nrf_gpio_cfg_output(CONNECTED_LED_PIN_NO);
     nrf_gpio_cfg_output(LEDBUTTON_LED_PIN_NO);
+    nrf_gpio_cfg_output(DEBUG_LED_PIN);
+    led_debug(DBG_ON);
 }
 
 
@@ -144,7 +160,7 @@ static void gap_params_init(void)
     err_code = sd_ble_gap_device_name_set(&sec_mode,
                                           (const uint8_t *)DEVICE_NAME,
                                           strlen(DEVICE_NAME));
-    APP_ERROR_CHECK(err_code);
+    APP_CHECK_RES_C(err_code, "sd_ble_gap_device_name_set");
 
     memset(&gap_conn_params, 0, sizeof(gap_conn_params));
 
@@ -154,7 +170,7 @@ static void gap_params_init(void)
     gap_conn_params.conn_sup_timeout  = CONN_SUP_TIMEOUT;
 
     err_code = sd_ble_gap_ppcp_set(&gap_conn_params);
-    APP_ERROR_CHECK(err_code);
+    APP_CHECK_RES_C(err_code, "sd_ble_gap_ppcp_set");
 }
 
 
@@ -169,7 +185,7 @@ static void advertising_init(void)
     ble_advdata_t advdata;
     ble_advdata_t scanrsp;
     
-    ble_uuid_t adv_uuids[] = {{LBS_UUID_SERVICE, m_lbs.uuid_type}};
+    ble_uuid_t adv_uuids[] = {{SMS_UUID_SERVICE, m_sms.uuid_type}};  // ,{LBS_UUID_SERVICE, m_lbs.uuid_type}
 
     // Build and set advertising data
     memset(&advdata, 0, sizeof(advdata));
@@ -184,9 +200,10 @@ static void advertising_init(void)
     scanrsp.uuids_complete.p_uuids  = adv_uuids;
     
     err_code = ble_advdata_set(&advdata, &scanrsp);
-    APP_ERROR_CHECK(err_code);
+    APP_CHECK_RES_C(err_code, "ble_advdata_set");
 }
 
+/*
 static void led_write_handler(ble_lbs_t * p_lbs, uint8_t led_state)
 {
     if (led_state)
@@ -198,18 +215,25 @@ static void led_write_handler(ble_lbs_t * p_lbs, uint8_t led_state)
         nrf_gpio_pin_clear(LEDBUTTON_LED_PIN_NO);
     }
 }
+*/
 
 /**@brief Function for initializing services that will be used by the application.
  */
 static void services_init(void)
 {
     uint32_t err_code;
-    ble_lbs_init_t init;
+//    ble_lbs_init_t lbs_init;
+    ble_sms_init_t sms_init;
     
-    init.led_write_handler = led_write_handler;
+//    lbs_init.led_write_handler = led_write_handler;
     
-    err_code = ble_lbs_init(&m_lbs, &init);
-    APP_ERROR_CHECK(err_code);
+//    err_code = ble_lbs_init(&m_lbs, &lbs_init);
+//    APP_CHECK_RES_C(err_code, "ble_lbs_init");
+    err_code = ble_sms_init(&m_sms, &sms_init);
+    APP_CHECK_RES_C(err_code, "ble_sms_init");
+
+    //Set a dummy moisture value
+//    ble_sms_on_moisture_update(&m_sms, dummy_moisture);
 }
 
 
@@ -244,7 +268,7 @@ static void on_conn_params_evt(ble_conn_params_evt_t * p_evt)
     if(p_evt->evt_type == BLE_CONN_PARAMS_EVT_FAILED)
     {
         err_code = sd_ble_gap_disconnect(m_conn_handle, BLE_HCI_CONN_INTERVAL_UNACCEPTABLE);
-        APP_ERROR_CHECK(err_code);
+        APP_CHECK_RES_C(err_code, "sd_ble_gap_disconnect");
     }
 }
 
@@ -278,7 +302,7 @@ static void conn_params_init(void)
     cp_init.error_handler                  = conn_params_error_handler;
 
     err_code = ble_conn_params_init(&cp_init);
-    APP_ERROR_CHECK(err_code);
+    APP_CHECK_RES_C(err_code, "ble_conn_params_init");
 }
 
 
@@ -306,7 +330,7 @@ static void advertising_start(void)
     adv_params.timeout     = APP_ADV_TIMEOUT_IN_SECONDS;
 
     err_code = sd_ble_gap_adv_start(&adv_params);
-    APP_ERROR_CHECK(err_code);
+    APP_CHECK_RES_C(err_code, "sd_ble_gap_adv_start");
     nrf_gpio_pin_set(ADVERTISING_LED_PIN_NO);
 }
 
@@ -330,7 +354,7 @@ static void on_ble_evt(ble_evt_t * p_ble_evt)
             m_conn_handle = p_ble_evt->evt.gap_evt.conn_handle;
 
             err_code = app_button_enable();
-            APP_ERROR_CHECK(err_code);
+            APP_CHECK_RES_C(err_code, "BLE_GAP_EVT_CONNECTED, app_button_enable");
             break;
 
         case BLE_GAP_EVT_DISCONNECTED:
@@ -338,7 +362,7 @@ static void on_ble_evt(ble_evt_t * p_ble_evt)
             m_conn_handle = BLE_CONN_HANDLE_INVALID;
 
             err_code = app_button_disable();
-            APP_ERROR_CHECK(err_code);
+            APP_CHECK_RES_C(err_code, "BLE_GAP_EVT_DISCONNECTED, app_button_disable");
             
             advertising_start();
             break;
@@ -347,12 +371,12 @@ static void on_ble_evt(ble_evt_t * p_ble_evt)
             err_code = sd_ble_gap_sec_params_reply(m_conn_handle,
                                                    BLE_GAP_SEC_STATUS_SUCCESS,
                                                    &m_sec_params,&keys_exchanged);
-            APP_ERROR_CHECK(err_code);
+            APP_CHECK_RES_C(err_code, "BLE_GAP_EVT_SEC_PARAMS_REQUEST, sd_ble_gap_sec_params_reply");
             break;
 
         case BLE_GATTS_EVT_SYS_ATTR_MISSING:
             err_code = sd_ble_gatts_sys_attr_set(m_conn_handle, NULL, 0,BLE_GATTS_SYS_ATTR_FLAG_USR_SRVCS);
-            APP_ERROR_CHECK(err_code);
+            APP_CHECK_RES_C(err_code, "BLE_GATTS_EVT_SYS_ATTR_MISSING, sd_ble_gatts_sys_attr_set");
             break;
 
         case BLE_GAP_EVT_AUTH_STATUS:
@@ -365,14 +389,14 @@ static void on_ble_evt(ble_evt_t * p_ble_evt)
             if (p_master_id.ediv == p_ble_evt->evt.gap_evt.params.sec_info_request.master_id.ediv)
             {
                 err_code = sd_ble_gap_sec_info_reply(m_conn_handle, &keys_exchanged.keys_peer.p_enc_key->enc_info, &keys_exchanged.keys_peer.p_id_key->id_info, NULL);
-                APP_ERROR_CHECK(err_code);
+                APP_CHECK_RES_C(err_code, "BLE_GAP_EVT_SEC_INFO_REQUEST, sd_ble_gap_sec_info_reply");
 								p_master_id.ediv = p_ble_evt->evt.gap_evt.params.sec_info_request.master_id.ediv;
             }
             else
             {
                 // No keys found for this device
                 err_code = sd_ble_gap_sec_info_reply(m_conn_handle, NULL, NULL,NULL);
-                APP_ERROR_CHECK(err_code);
+                APP_CHECK_RES_C(err_code, "BLE_GAP_EVT_SEC_INFO_REQUEST, sd_ble_gap_sec_info_reply");
             }
             break;
 
@@ -387,13 +411,15 @@ static void on_ble_evt(ble_evt_t * p_ble_evt)
                                          NRF_GPIO_PIN_SENSE_LOW);
                 
                 // Go to system-off mode (this function will not return; wakeup will cause a reset)                
-                err_code = sd_power_system_off();
-                APP_ERROR_CHECK(err_code);
+//                err_code = sd_power_system_off();
+//                APP_CHECK_RES_C(err_code, "BLE_GAP_EVT_TIMEOUT, sd_power_system_off");
+                NRF_LOG_INFO("BLE_GAP_EVT_TIMEOUT: Not going to sleep dammit!\r\n");
             }
             break;
 
         default:
             // No implementation needed.
+            NRF_LOG_INFO("BLE Unknown Event %hu\r\n", p_ble_evt->header.evt_id);
             break;
     }
 }
@@ -408,9 +434,12 @@ static void on_ble_evt(ble_evt_t * p_ble_evt)
  */
 static void ble_evt_dispatch(ble_evt_t * p_ble_evt)
 {
+//    NRF_LOG_INFO("BLE Event %hu\r\n", p_ble_evt->header.evt_id);
+    led_debug(DBG_TOGGLE);
     on_ble_evt(p_ble_evt);
     ble_conn_params_on_ble_evt(p_ble_evt);
-    ble_lbs_on_ble_evt(&m_lbs, p_ble_evt);
+//    ble_lbs_on_ble_evt(&m_lbs, p_ble_evt);
+    ble_sms_on_ble_evt(&m_sms, p_ble_evt);
 }
 
 
@@ -433,7 +462,7 @@ static void ble_stack_init(void)
     err_code = softdevice_enable_get_default_config(CENTRAL_LINK_COUNT,
                                                     PERIPHERAL_LINK_COUNT,
                                                     &ble_enable_params);
-    APP_ERROR_CHECK(err_code);
+    APP_CHECK_RESULT(err_code);
 
     //Check the ram settings against the used number of links
     CHECK_RAM_START_ADDR(CENTRAL_LINK_COUNT, PERIPHERAL_LINK_COUNT);
@@ -444,11 +473,11 @@ static void ble_stack_init(void)
 #endif
     // softdevice_enable invokes sd_ble_enable()
     err_code = softdevice_enable(&ble_enable_params);
-    APP_ERROR_CHECK(err_code);
+    APP_CHECK_RESULT(err_code);
 
     // Subscribe for BLE events.
     err_code = softdevice_ble_evt_handler_set(ble_evt_dispatch);
-    APP_ERROR_CHECK(err_code);
+    APP_CHECK_RESULT(err_code);
 }
 
 
@@ -462,24 +491,27 @@ static void scheduler_init(void)
 
 static void button_event_handler(uint8_t pin_no, uint8_t button_action)
 {
-    uint32_t err_code;
+//    uint32_t err_code;
     
     switch (pin_no)
     {
         case LEDBUTTON_BUTTON_PIN_NO:
-            err_code = ble_lbs_on_button_change(&m_lbs, button_action);
+        	++dummy_moisture;
+        	ble_sms_on_moisture_update(&m_sms, dummy_moisture);
+/*        	err_code = ble_lbs_on_button_change(&m_lbs, button_action);
             if (err_code != NRF_SUCCESS &&
                 err_code != BLE_ERROR_INVALID_CONN_HANDLE &&
                 err_code != NRF_ERROR_INVALID_STATE)
             {
-                APP_ERROR_CHECK(err_code);
+                APP_CHECK_RESULT(err_code);
             }
-            break;
+*/            break;
 
         default:
             APP_ERROR_HANDLER(pin_no);
             break;
     }
+    NRF_LOG_INFO("Button %u, %u\r\n", pin_no, button_action);
 }
 
 /**@brief Function for initializing the GPIOTE handler module.
@@ -502,7 +534,11 @@ static void buttons_init(void)
         {LEDBUTTON_BUTTON_PIN_NO, false, BUTTON_PULL, button_event_handler}
     };
 
-    app_button_init(buttons, sizeof(buttons) / sizeof(buttons[0]), BUTTON_DETECTION_DELAY);
+    uint32_t err_code = app_button_init(buttons, sizeof(buttons) / sizeof(buttons[0]), BUTTON_DETECTION_DELAY);
+    APP_CHECK_RES_C(err_code, "app_button_init");
+    err_code = app_button_enable();
+    APP_CHECK_RES_C(err_code, "app_button_enable");
+
 }
 
 
@@ -511,15 +547,20 @@ static void buttons_init(void)
 static void power_manage(void)
 {
     uint32_t err_code = sd_app_evt_wait();
-    APP_ERROR_CHECK(err_code);
+    APP_CHECK_RESULT(err_code);
 }
 
+
+void app_simple_timer_timeout_handler(void *p_context) {
+    NRF_LOG_INFO("app_simple_timer_timeout_handler: Timeout fuckers! %p\r\n", (uint32_t)p_context);
+}
 
 /**@brief Function for application main entry.
  */
 int main(void)
 {
     // Initialize
+	NRF_LOG_INIT(NULL);
     leds_init();
     timers_init();
     gpiote_init();
@@ -536,6 +577,8 @@ int main(void)
     timers_start();
     advertising_start();
 
+
+    NRF_LOG_INFO("Hello\r\n");
     // Enter main loop
     for (;;)
     {

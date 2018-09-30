@@ -1,3 +1,9 @@
+Abandoned once I discovered this:
+https://www.banggood.com/Original-Xiaomi-4-in-1-Flower-Plant-Light-Temperature-Tester-Garden-Soil-Moisture-Nutrient-Monitor-p-1068369.html?cur_warehouse=CN
+and this:
+https://github.com/ChristianKuehnel/plantgateway
+
+
 nrf51-ble-app-lbs
 ==================
 (Draft update to v8.0)

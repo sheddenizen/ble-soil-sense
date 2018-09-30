@@ -10,6 +10,10 @@
 #include "ble_srv_common.h"
 #include "app_util.h"
 
+#define NRF_LOG_MODULE_NAME "LBS"
+#include "nrf_log.h"
+#include "nrf_log_ctrl.h"
+
 
 /**@brief Function for handling the Connect event.
  *
@@ -52,19 +56,23 @@ static void on_write(ble_lbs_t * p_lbs, ble_evt_t * p_ble_evt)
 }
 
 
+
 void ble_lbs_on_ble_evt(ble_lbs_t * p_lbs, ble_evt_t * p_ble_evt)
 {
     switch (p_ble_evt->header.evt_id)
     {
         case BLE_GAP_EVT_CONNECTED:
+            NRF_LOG_INFO("ble_lbs_on_ble_evt: BLE_GAP_EVT_CONNECTED\r\n");
             on_connect(p_lbs, p_ble_evt);
             break;
             
         case BLE_GAP_EVT_DISCONNECTED:
+            NRF_LOG_INFO("ble_lbs_on_ble_evt: BLE_GAP_EVT_DISCONNECTED\r\n");
             on_disconnect(p_lbs, p_ble_evt);
             break;
             
         case BLE_GATTS_EVT_WRITE:
+            NRF_LOG_INFO("ble_lbs_on_ble_evt: BLE_GATTS_EVT_WRITE\r\n");
             on_write(p_lbs, p_ble_evt);
             break;
             

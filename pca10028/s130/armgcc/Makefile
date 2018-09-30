@@ -10,6 +10,9 @@ $(OUTPUT_DIRECTORY)/nrf51422_xxac.out: \
 
 # Source files common to all targets
 SRC_FILES += \
+  $(PROJ_DIR)/main.c \
+  $(PROJ_DIR)/ble_lbs.c \
+  $(PROJ_DIR)/ble_sms.c \
   $(SDK_ROOT)/components/libraries/log/src/nrf_log_backend_serial.c \
   $(SDK_ROOT)/components/libraries/log/src/nrf_log_frontend.c \
   $(SDK_ROOT)/components/libraries/button/app_button.c \
@@ -27,7 +30,6 @@ SRC_FILES += \
   $(SDK_ROOT)/components/drivers_nrf/uart/nrf_drv_uart.c \
   $(SDK_ROOT)/components/libraries/bsp/bsp.c \
   $(SDK_ROOT)/components/libraries/bsp/bsp_nfc.c \
-  $(PROJ_DIR)/main.c \
   $(SDK_ROOT)/external/segger_rtt/RTT_Syscalls_GCC.c \
   $(SDK_ROOT)/external/segger_rtt/SEGGER_RTT.c \
   $(SDK_ROOT)/external/segger_rtt/SEGGER_RTT_printf.c \
@@ -36,13 +38,15 @@ SRC_FILES += \
   $(SDK_ROOT)/components/ble/common/ble_srv_common.c \
   $(SDK_ROOT)/components/toolchain/gcc/gcc_startup_nrf51.S \
   $(SDK_ROOT)/components/toolchain/system_nrf51.c \
-  $(SDK_ROOT)/components/ble/ble_services/ble_lbs/ble_lbs.c \
   $(SDK_ROOT)/components/softdevice/common/softdevice_handler/softdevice_handler.c \
   $(SDK_ROOT)/components/drivers_nrf/ble_flash/ble_flash.c \
   $(SDK_ROOT)/components/libraries/gpiote/app_gpiote.c \
   $(SDK_ROOT)/components/libraries/scheduler/app_scheduler.c \
   $(SDK_ROOT)/components/libraries/timer/app_timer.c \
   $(SDK_ROOT)/components/libraries/timer/app_timer_appsh.c \
+
+#  $(SDK_ROOT)/components/ble/ble_services/ble_lbs/ble_lbs.c \
+
 
 # Include folders common to all targets
 INC_FOLDERS += \
@@ -149,11 +153,14 @@ INC_FOLDERS += \
   $(SDK_ROOT)/components/ble/ble_services/ble_hrs \
   $(SDK_ROOT)/components/libraries/log/src \
   $(SDK_ROOT)/components/drivers_nrf/ble_flash \
-  $(SDK_ROOT)/components/libraries/gpiote
+  $(SDK_ROOT)/components/libraries/gpiote \
+  
 
 
 # Libraries common to all targets
 LIB_FILES += \
+
+CFLAGS += -DDEBUG
 
 # C flags common to all targets
 CFLAGS += -DBOARD_PCA10028
